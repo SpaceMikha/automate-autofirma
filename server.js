@@ -12,29 +12,25 @@ app.use(express.json({ limit: "50mb" }));
 app.use(express.text({ type: "*/*", limit: "50mb" }));
 app.use(express.urlencoded({ extended: true, limit: "50mb" }));
 
-// Directorios
+// dirs
 const uploadsDir = path.join(__dirname, "uploads");
 if (!fs.existsSync(uploadsDir)) fs.mkdirSync(uploadsDir);
 
-// Almacenamiento temporal de firmas
+// Storage for signatures
 const signatures = {};
 
-// Headers CORS y ngrok - IMPORTANTE: debe ir ANTES de las rutas
+
 app.use((req, res, next) => {
-  // Headers para CORS
   res.header("Access-Control-Allow-Origin", "*");
   res.header("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS");
   res.header("Access-Control-Allow-Headers", "Content-Type, ngrok-skip-browser-warning");
   
-  // Headers específicos para ngrok
   res.header("ngrok-skip-browser-warning", "true");
   
-  // Si ngrok envía el header ngrok-skip-browser-warning, lo procesamos
   if (req.headers['ngrok-skip-browser-warning']) {
     console.log("Detectada solicitud de ngrok");
   }
   
-  // Log de todas las solicitudes
   console.log(`${req.method} ${req.path} - Headers:`, req.headers['user-agent']);
   
   next();
