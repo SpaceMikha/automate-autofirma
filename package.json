@@ -1,0 +1,12 @@
+{
+  "name": "autofirma-web",
+  "version": "1.0.0",
+  "description": "Web para firmar con AutoFirma",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "dependencies": {
+    "express": "^4.18.2"
+  }
+}

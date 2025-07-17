@@ -1,0 +1,150 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <title>Firma con AutoFirma - Método Profesional</title>
+    <meta charset="UTF-8">
+  </head>
+  <body>
+    <h1>Firmar documento PDF</h1>
+
+    <input type="file" id="fileInput" accept=".pdf" />
+    <button onclick="firmar()">Firmar con AutoFirma</button>
+    <br><br>
+    <div id="status"></div>
+
+    <script>
+      const BASE_URL = "https://04a40c4fbefe.ngrok-free.app";
+      
+      let fileBase64 = null;
+      let fileName = null;
+
+      document.getElementById("fileInput").addEventListener("change", function (e) {
+        const file = e.target.files[0];
+        if (!file) return;
+        
+        fileName = file.name;
+        const reader = new FileReader();
+        reader.onload = function (event) {
+          fileBase64 = event.target.result.split(',')[1];
+          document.getElementById("status").innerText = 
+            `Archivo cargado: ${fileName} (${(file.size/1024/1024).toFixed(2)} MB)`;
+        };
+        reader.readAsDataURL(file);
+      });
+
+      async function firmar() {
+        if (!fileBase64) {
+          alert("Selecciona un archivo PDF");
+          return;
+        }
+
+        document.getElementById("status").innerText = "Iniciando proceso de firma...";
+
+        try {
+          // Crear una sesión en el servidor
+          const sessionRes = await fetch("/afirma/create-session", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ 
+              fileName: fileName,
+              fileSize: fileBase64.length 
+            })
+          });
+
+          if (!sessionRes.ok) throw new Error("Error creando sesión");
+          
+          const { sessionId, uploadUrl, downloadUrl } = await sessionRes.json();
+          
+          console.log("Sesión creada:", sessionId);
+
+          //Subir el archivo al servidor
+          document.getElementById("status").innerText = "Subiendo archivo al servidor...";
+          
+          const uploadRes = await fetch(uploadUrl, {
+            method: "PUT",
+            headers: { "Content-Type": "application/pdf" },
+            body: Uint8Array.from(atob(fileBase64), c => c.charCodeAt(0))
+          });
+
+          if (!uploadRes.ok) throw new Error("Error subiendo archivo");
+          
+          //Preparar AutoFirma con una URL temporal única
+          const tempFileUrl = `${BASE_URL}/afirma/download-original/${sessionId}`;
+          const storageUrl = `${BASE_URL}/afirma/store/${sessionId}`;
+          
+         
+          const afirmaUrl = 
+            "afirma://sign?" +
+            "properties=headless:true%0D%0A" + 
+            "includeOnlySigningCertificate:false%0D%0A" +
+            "base64:false&" +
+            "op=sign&" +
+            "format=PAdES&" +
+            "algorithm=SHA256withRSA&" +
+            "fileuri=" + encodeURIComponent(tempFileUrl) +
+            "&stservlet=" + encodeURIComponent(storageUrl);
+
+          console.log("=== Configuración AutoFirma ===");
+          console.log("URL archivo temporal:", tempFileUrl);
+          console.log("URL almacenamiento:", storageUrl);
+          console.log("URL AutoFirma completa:", afirmaUrl);
+
+          document.getElementById("status").innerText = "Abriendo AutoFirma...";
+          
+          // Abrir AutoFirma
+          window.open(afirmaUrl, '_self');
+          
+          // Esperar y verificar
+          setTimeout(() => {
+            document.getElementById("status").innerText = "Esperando firma...";
+            checkSignatureStatus(sessionId);
+          }, 5000);
+
+        } catch (err) {
+          console.error("Error:", err);
+          document.getElementById("status").innerText = `Error: ${err.message}`;
+        }
+      }
+
+      async function checkSignatureStatus(sessionId) {
+        let attempts = 0;
+        const maxAttempts = 120; // 4 minutos
+
+        const checkInterval = setInterval(async () => {
+          attempts++;
+          
+          try {
+            const statusRes = await fetch(`/afirma/session/${sessionId}/status`);
+            const status = await statusRes.json();
+            
+            console.log(`Verificación ${attempts}:`, status);
+            
+            if (status.signed) {
+              clearInterval(checkInterval);
+              document.getElementById("status").innerText = "✓ Documento firmado. Descargando...";
+              
+              // Descargar archivo firmado
+              window.location.href = `/afirma/session/${sessionId}/download`;
+              
+              setTimeout(() => {
+                document.getElementById("status").innerText = "✅ Proceso completado";
+              }, 2000);
+              
+            } else if (status.error) {
+              clearInterval(checkInterval);
+              document.getElementById("status").innerText = `❌ Error: ${status.error}`;
+            } else if (attempts >= maxAttempts) {
+              clearInterval(checkInterval);
+              document.getElementById("status").innerText = "⏱️ Tiempo agotado";
+            } else {
+              document.getElementById("status").innerText = 
+                `Esperando firma... ${Math.floor(attempts/maxAttempts*100)}%`;
+            }
+          } catch (err) {
+            console.error("Error verificando:", err);
+          }
+        }, 2000);
+      }
+    </script>
+  </body>
+</html>
